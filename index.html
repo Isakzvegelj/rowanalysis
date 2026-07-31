@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RowAnalysis — Race Data Visualizer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+:root {
+  --bg: #0b1120;
+  --surface: #131c31;
+  --surface2: #1a2744;
+  --border: #1e3355;
+  --text: #e2e8f0;
+  --text-dim: #8899b4;
+  --accent: #3b82f6;
+  --accent2: #60a5fa;
+  --gold: #f59e0b;
+  --silver: #94a3b8;
+  --bronze: #cd7f32;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh;
+}
+.header {
+  background: linear-gradient(135deg, #0f1a3a 0%, #1a2744 50%, #0f1a3a 100%);
+  border-bottom: 1px solid var(--border); padding: 1.5rem 2rem;
+}
+.header h1 { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em; }
+.header h1 span { color: var(--accent); }
+.header p { color: var(--text-dim); font-size: 0.95rem; margin-top: 0.3rem; }
+.container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+
+/* Controls */
+.controls { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; align-items: end; }
+.control-group { display: flex; flex-direction: column; gap: 0.3rem; }
+.control-group label { font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+select, input, button {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 0.5rem; padding: 0.5rem 0.8rem; font-size: 0.9rem;
+  outline: none; transition: border-color 0.2s;
+}
+select:focus, input:focus { border-color: var(--accent); }
+button {
+  background: var(--accent); color: white; border: none; cursor: pointer;
+  font-weight: 600; padding: 0.5rem 1.2rem; display: inline-flex; align-items: center; gap: 0.5rem;
+}
+button:hover { filter: brightness(1.1); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.secondary { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+button.secondary:hover { background: var(--border); }
+
+/* Race info card */
+.race-info {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem;
+  padding: 1.25rem; margin-bottom: 1.5rem; display: none;
+}
+.race-info.visible { display: block; }
+.race-info h2 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+.race-info .meta { display: flex; flex-wrap: wrap; gap: 1.5rem; color: var(--text-dim); font-size: 0.9rem; }
+.race-info .meta span strong { color: var(--text); }
+
+/* Result table */
+.result-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+.result-table th, .result-table td {
+  padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.result-table th { color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+.result-table tr:hover td { background: var(--surface2); }
+.result-table .medal { font-size: 1.1rem; }
+.result-table .gold { color: var(--gold); }
+.result-table .silver { color: var(--silver); }
+.result-table .bronze { color: var(--bronze); }
+
+/* Chart grid */
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+.chart-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem;
+  padding: 1rem; position: relative;
+}
+.chart-card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-dim); }
+.chart-card .chart-container { position: relative; width: 100%; height: 350px; }
+.chart-card.full { grid-column: 1 / -1; }
+
+/* Tabs */
+.tabs { display: flex; gap: 0.25rem; margin-bottom: 1rem; }
+.tab {
+  padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; cursor: pointer;
+  font-size: 0.85rem; font-weight: 600; color: var(--text-dim); background: transparent;
+  border: 1px solid transparent; border-bottom: 2px solid transparent;
+}
+.tab.active { color: var(--accent); background: var(--surface); border-color: var(--border) var(--border) var(--surface); }
+.tab:hover:not(.active) { color: var(--text); }
+
+/* Stats */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+.stat-card {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 0.5rem;
+  padding: 0.75rem; text-align: center;
+}
+.stat-card .stat-value { font-size: 1.5rem; font-weight: 700; }
+.stat-card .stat-label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; }
+
+/* PDF upload zone */
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: 0.75rem; padding: 2rem;
+  text-align: center; cursor: pointer; transition: all 0.3s; margin-bottom: 1.5rem;
+}
+.drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(59,130,246,0.05); }
+.drop-zone p { color: var(--text-dim); }
+.drop-zone .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+
+/* Example data card */
+.example-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem;
+  padding: 1.5rem; margin-bottom: 1.5rem; cursor: pointer; transition: all 0.2s;
+}
+.example-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.example-card h3 { font-size: 1rem; margin-bottom: 0.25rem; }
+.example-card p { color: var(--text-dim); font-size: 0.85rem; }
+.example-card .badge {
+  display: inline-block; background: var(--accent); color: white; font-size: 0.7rem;
+  padding: 0.15rem 0.5rem; border-radius: 1rem; margin-top: 0.5rem; font-weight: 600;
+}
+
+/* Loading */
+.loading { display: none; text-align: center; padding: 2rem; color: var(--text-dim); }
+.loading.active { display: block; }
+.spinner { width: 2rem; height: 2rem; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 0.5rem; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Legend color swatches */
+.legend-color { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 0.4rem; vertical-align: middle; }
+
+/* Insights */
+.insights { background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; margin-top: 1.5rem; }
+.insights h3 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--accent2); }
+.insights ul { list-style: none; }
+.insights li { padding: 0.4rem 0; font-size: 0.9rem; color: var(--text-dim); }
+.insights li::before { content: '▸ '; color: var(--accent); }
+
+/* Footer */
+.footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 2rem; }
+.footer a { color: var(--accent2); text-decoration: none; }
+
+/* Boat color palette */
+.boat-color { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.3rem; }
+
+/* Error message */
+.error { display: none; background: #3b1a1a; border: 1px solid #5c2a2a; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; color: #fca5a5; }
+.error.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Row<span>Analysis</span></h1>
+  <p>Race data visualizer — speed, stroke rate & pacing analysis from World Rowing race data</p>
+</div>
+
+<div class="container">
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="control-group">
+      <label>Event</label>
+      <select id="eventSelect">
+        <option value="2025-WCH">2025 World Champs (Shanghai)</option>
+        <option value="2026-ECH" selected>2026 European Champs (Varese)</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Boat Class</label>
+      <select id="classSelect">
+        <option value="M1x">M1x — Men's Single Sculls</option>
+        <option value="W1x">W1x — Women's Single Sculls</option>
+        <option value="M2-">M2- — Men's Pair</option>
+        <option value="W2-">W2- — Women's Pair</option>
+        <option value="M2x">M2x — Men's Double Sculls</option>
+        <option value="W2x">W2x — Women's Double Sculls</option>
+        <option value="M4-">M4- — Men's Four</option>
+        <option value="W4-">W4- — Women's Four</option>
+        <option value="M4x">M4x — Men's Quad</option>
+        <option value="W4x">W4x — Women's Quad</option>
+        <option value="M8+" selected>M8+ — Men's Eight</option>
+        <option value="W8+">W8+ — Women's Eight</option>
+        <option value="LM2x">LM2x — Lightweight Men's 2x</option>
+        <option value="LW2x">LW2x — Lightweight Women's 2x</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Round</label>
+      <select id="roundSelect">
+        <option value="FA">Final A</option>
+        <option value="FB">Final B</option>
+        <option value="SF">Semifinal</option>
+        <option value="HEAT">Heat</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Race #</label>
+      <input type="number" id="raceNum" value="1" min="1" max="999" style="width: 80px;">
+    </div>
+    <button id="loadBtn">Load Race Data</button>
+    <button id="exampleBtn" class="secondary">Load Example (W1x Final 2025)</button>
+  </div>
+
+  <!-- Drop zone for PDF uploads -->
+  <div class="drop-zone" id="dropZone">
+    <div class="icon">📄</div>
+    <p><strong>Drop a World Rowing race data PDF</strong> or click to select</p>
+    <p style="font-size: 0.8rem; margin-top: 0.3rem;">Parses speed & stroke rate data from World Rowing race PDFs</p>
+    <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+  </div>
+
+  <!-- Error -->
+  <div class="error" id="errorMsg"></div>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>Parsing race data...</p>
+  </div>
+
+  <!-- Race Info -->
+  <div class="race-info" id="raceInfo">
+    <h2 id="raceTitle">—</h2>
+    <div class="meta">
+      <span><strong>Event:</strong> <span id="raceEvent">—</span></span>
+      <span><strong>Class:</strong> <span id="raceClass">—</span></span>
+      <span><strong>Round:</strong> <span id="raceRound">—</span></span>
+      <span><strong>Race #:</strong> <span id="raceNumber">—</span></span>
+      <span><strong>Date:</strong> <span id="raceDate">—</span></span>
+      <span><strong>Venue:</strong> <span id="raceVenue">—</span></span>
+    </div>
+    <table class="result-table" id="resultTable">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Lane</th>
+          <th>Country</th>
+          <th>500m</th>
+          <th>1000m</th>
+          <th>1500m</th>
+          <th>2000m</th>
+          <th>Avg Speed</th>
+          <th>Avg Rate</th>
+          <th>Pacing</th>
+        </tr>
+      </thead>
+      <tbody id="resultBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid" id="statsGrid" style="display:none;">
+    <div class="stat-card">
+      <div class="stat-value" id="statStartSpeed">—</div>
+      <div class="stat-label">Start Speed (m/s)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statFinishSpeed">—</div>
+      <div class="stat-label">Finish Speed (m/s)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statMaxRate">—</div>
+      <div class="stat-label">Max Stroke Rate</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statMinRate">—</div>
+      <div class="stat-label">Min Stroke Rate</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statSpeedDrop">—</div>
+      <div class="stat-label">Speed Drop (peak→min)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statRateRange">—</div>
+      <div class="stat-label">Rate Range (spm)</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Speed Over Distance</h3>
+      <div class="chart-container">
+        <canvas id="speedChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Stroke Rate Over Distance</h3>
+      <div class="chart-container">
+        <canvas id="rateChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card full">
+      <h3>Speed vs Stroke Rate — Pacing Profile</h3>
+      <div class="chart-container" style="height:400px;">
+        <canvas id="profileChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>500m Split Times</h3>
+      <div class="chart-container" style="height:300px;">
+        <canvas id="splitChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Speed Differential from Winner</h3>
+      <div class="chart-container" style="height:300px;">
+        <canvas id="diffChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Insights -->
+  <div class="insights" id="insights" style="display:none;">
+    <h3>Race Insights</h3>
+    <ul id="insightsList"></ul>
+  </div>
+
+  <!-- Example data cards -->
+  <h3 style="color: var(--text-dim); margin: 1.5rem 0 0.75rem; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em;">Quick Examples</h3>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+    <div class="example-card" data-example="W1x">
+      <h3>W1x — Women's Single Sculls Final</h3>
+      <p>2025 World Champs, Shanghai. 6 boats, 50m split data.</p>
+      <span class="badge">Speed & Rate</span>
+    </div>
+    <div class="example-card" data-example="M8+">
+      <h3>M8+ — Men's Eight Final</h3>
+      <p>2025 World Champs, Shanghai. The big boats.</p>
+      <span class="badge">Team Race</span>
+    </div>
+    <div class="example-card" data-example="M2x">
+      <h3>M2x — Men's Double Sculls</h3>
+      <p>2025 World Champs, Shanghai. Pacing comparison.</p>
+      <span class="badge">Pacing</span>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <p>RowAnalysis — connected to <a href="https://worldrowing.com" target="_blank">World Rowing</a> race data |
+  Data source: World Rowing race data PDFs (speed & stroke rate every 50m)</p>
+  <p style="margin-top: 0.3rem; font-size: 0.75rem;">Built for the 2026 European Rowing Championships, Varese</p>
+</div>
+
+<script>
+// ============================================================
+// COLOR PALETTE
+// ============================================================
+const BOAT_COLORS = [
+  '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#ec4899',
+  '#06b6d4', '#f97316', '#84cc16', '#6366f1', '#14b8a6', '#e11d48'
+];
+
+const COUNTRY_COLORS = {
+  'GER': '#dddddd', 'DEN': '#c8102e', 'GBR': '#012169', 'IRL': '#169b62',
+  'LTU': '#fdb913', 'ESP': '#c60b1e', 'NED': '#ff6600', 'AUS': '#00843d',
+  'NZL': '#000000', 'ITA': '#009246', 'ROU': '#002b7f', 'FRA': '#002395',
+  'USA': '#3c3b6e', 'CAN': '#ff0000', 'CHN': '#de2910', 'CRO': '#171796',
+  'SLO': '#005daa', 'SUI': '#ff0000', 'POL': '#dc143c', 'GRE': '#0d5eaf',
+  'UKR': '#0057b7', 'AUT': '#ed2939', 'NOR': '#ba0c2f', 'RSA': '#007a4d',
+  'BRA': '#009c3b', 'JPN': '#bc002d', 'SRB': '#0c4076', 'BUL': '#00966e',
+  'TUR': '#e30a17', 'BEL': '#ffd90c', 'HUN': '#436f4d', 'CZE': '#11457e',
+  'EST': '#0072ce', 'LAT': '#9d2235', 'SVK': '#0b4ea2', 'EGY': '#c8102e',
+  'TUN': '#e70013', 'MEX': '#006341', 'ARG': '#75aadb', 'PHI': '#0038a8',
+  'INA': '#ce1126', 'VIE': '#da251d', 'KOR': '#003478', 'HKG': '#ee2e24',
+  'TPE': '#000095', 'UZB': '#0099b5', 'KAZ': '#00afca', 'PUR': '#ef3340',
+  'ALG': '#006233', 'MAR': '#c1272d', 'KUW': '#007a3d', 'QAT': '#8c1b40',
+  'SGP': '#ee2536', 'THA': '#241d4f', 'BHR': '#ce1126', 'IRQ': '#ce1126',
+  'JOR': '#ce1126', 'LBN': '#ed1c24', 'OMA': '#ce1126', 'KSA': '#006c35',
+  'UAE': '#00732f', 'YEM': '#ce1126', 'ANG': '#ff0000', 'CMR': '#007a5e',
+  'CPV': '#003893', 'CIV': '#f77f00', 'COD': '#007fff', 'ETH': '#078930',
+  'GHA': '#ce1126', 'KEN': '#bb0000', 'LBA': '#239e46', 'MAD': '#fc3d32',
+  'MLI': '#14b53a', 'MOZ': '#c8102e', 'NAM': '#003580', 'NGR': '#008751',
+  'SEN': '#00853f', 'SLE': '#1eb53a', 'SOM': '#4189dd', 'SUD': '#d21034',
+  'TOG': '#006a4e', 'UGA': '#fcdd09', 'TAN': '#1eb53a', 'ZIM': '#006400',
+  'ZAM': '#198a00', 'ANG': '#cc092f', 'BEN': '#009460', 'BFA': '#ef2b2d',
+  'BDI': '#ce1126', 'CAF': '#003361', 'CHA': '#002061', 'CGO': '#009543',
+  'DJI': '#12ad2b', 'GEQ': '#3e75a4', 'ERI': '#218235', 'GAB': '#009460',
+  'GAM': '#ce1126', 'GBS': '#ce1126', 'LES': '#4a9c43', 'LBR': '#bf2a2a',
+  'MWI': '#339e35', 'MRT': '#d01c1f', 'MUS': '#00a551', 'NIG': '#e05206',
+  'RWA': '#00a64a', 'STP': '#12ad2b', 'SEY': '#003f87', 'SWZ': '#3e5da3',
+  'TOG': '#006a4e', 'TUN': '#e70013', 'BEN': '#fcd116', 'MLT': '#ce1126',
+  'ISL': '#003897', 'ISR': '#0038b8', 'MKD': '#d20000', 'MNE': '#d40000',
+  'ALB': '#e00000', 'ARM': '#d90012', 'AZE': '#0095c8', 'BLR': '#ce1126',
+  'BIH': '#002395', 'CYP': '#0057b8', 'GEO': '#ff0000', 'LIE': '#0000a8',
+  'LUX': '#ed2939', 'MDA': '#0032a0', 'MON': '#ce1126', 'RUS': '#0039a6',
+  'SMR': '#009999', 'SVN': '#005daa', 'MNE': '#d40000', 'LTU': '#006b3f',
+  'LAT': '#9d2235', 'EST': '#0072ce', 'BLR': '#ce1126', 'UKR': '#0057b7',
+  'MDA': '#0032a0', 'GEO': '#ff0000', 'ARM': '#d90012', 'AZE': '#0095c8',
+  'KAZ': '#00afca', 'UZB': '#0099b5', 'TKM': '#0095c8', 'KGZ': '#ce1126',
+  'TJK': '#ce1126', 'MNG': '#0051a7', 'PRK': '#024fa2', 'KOR': '#003478',
+  'JPN': '#bc002d', 'PHI': '#0038a8', 'VIE': '#da251d', 'LAO': '#ce1126',
+  'CAM': '#e00025', 'THA': '#241d4f', 'MYA': '#fecb00', 'MAS': '#010066',
+  'SGP': '#ee2536', 'BRU': '#f7e017', 'INA': '#ce1126', 'TLS': '#ce1126',
+  'NEP': '#003893', 'BHU': '#ff4e12', 'BAN': '#006a4e', 'IND': '#ff9933',
+  'PAK': '#01411c', 'SRI': '#8d1b3d', 'MDV': '#d21034', 'AFG': '#000000',
+  'IRN': '#239f40', 'IRQ': '#ce1126', 'JOR': '#ce1126', 'KUW': '#007a3d',
+  'LBN': '#ed1c24', 'OMA': '#ce1126', 'QAT': '#8c1b40', 'KSA': '#006c35',
+  'SYR': '#ce1126', 'UAE': '#00732f', 'YEM': '#ce1126', 'BHR': '#ce1126',
+  'PSE': '#ce1126', 'COK': '#00247d', 'FIJ': '#006ab6', 'KIR': '#ce1126',
+  'MHL': '#00247d', 'FSM': '#75aadb', 'NRU': '#00247d', 'PLW': '#0085c7',
+  'PNG': '#ce1126', 'SAM': '#ce1126', 'SOL': '#0051ba', 'TGA': '#c10000',
+  'TUV': '#0072c6', 'VAN': '#ce1126', 'AUS': '#00843d', 'NZL': '#000000',
+  'WSM': '#ce1126', 'ASA': '#003893', 'GUM': '#0038a8', 'NMI': '#0051ba',
+  'PYF': '#ce1126', 'NCL': '#ed2939', 'NED1': '#ff6600', 'NED2': '#ffaa33',
+};
+
+// ============================================================
+// SAMPLE DATA — 2025 World Champs W1x Final A
+// ============================================================
+const SAMPLE_RACES = {
+  'W1x': {
+    venue: 'Shanghai, China',
+    date: '28 Sep 2025',
+    event: '2025 World Rowing Championships',
+    class: 'W1x',
+    round: 'FA',
+    raceNum: 135,
+    boats: [
+      {
+        country: 'GER', rank: 5, lane: 1,
+        speed: [5.1,4.9,4.8,4.8,4.6,4.7,4.6,4.6,4.6,4.5,4.4,4.4,4.3,4.4,4.4,4.4,4.4,4.3,4.4,4.3,4.3,4.4,4.4,4.4,4.4,4.3,4.3,4.3,4.3,4.3,4.4,4.4,4.5,4.5,4.5,4.6,4.7,4.7,4.8,4.7],
+        rate: [46,41,40,39,38,37,37,36,36,36,35,35,34,35,34,34,35,34,34,34,34,34,34,35,35,34,34,34,34,35,35,36,36,36,36,37,39,39,40,39]
+      },
+      {
+        country: 'DEN', rank: 3, lane: 2,
+        speed: [5.1,5.1,4.9,4.8,4.8,4.7,4.7,4.6,4.6,4.6,4.5,4.5,4.5,4.5,4.4,4.4,4.4,4.4,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.4,4.5,4.5,4.6,4.6,4.7,4.7,4.8,4.8,4.8,4.8,4.8,4.6],
+        rate: [46,42,40,39,38,38,37,37,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,37,37,37,38,38,38,39,39,39,38]
+      },
+      {
+        country: 'GBR', rank: 2, lane: 3,
+        speed: [5.3,5.2,5.0,4.9,4.8,4.8,4.7,4.7,4.6,4.6,4.5,4.5,4.5,4.5,4.5,4.5,4.4,4.4,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.4,4.5,4.5,4.6,4.6,4.7,4.7,4.8,4.9,4.9,5.0,5.0,5.0],
+        rate: [48,44,42,40,39,38,38,37,37,36,36,36,36,36,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,36,36,37,37,38,38,39,39,40,40,40]
+      },
+      {
+        country: 'IRL', rank: 1, lane: 4,
+        speed: [5.2,5.1,5.0,4.9,4.8,4.8,4.7,4.7,4.7,4.6,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.5,4.6,4.6,4.7,4.7,4.8,4.8,4.9,4.9,5.0,5.0,4.9],
+        rate: [48,44,41,40,39,38,37,37,37,36,36,36,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,36,36,37,37,38,38,39,39,40,40,40]
+      },
+      {
+        country: 'LTU', rank: 4, lane: 5,
+        speed: [5.1,5.0,4.9,4.8,4.7,4.7,4.6,4.6,4.5,4.5,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.4,4.5,4.5,4.6,4.6,4.7,4.7,4.7,4.7,4.7,4.6],
+        rate: [46,42,40,39,38,37,37,36,36,35,35,35,35,35,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,35,35,36,36,36,37,37,37,37,37,37]
+      },
+      {
+        country: 'ESP', rank: 6, lane: 6,
+        speed: [5.0,4.9,4.8,4.7,4.6,4.5,4.5,4.4,4.4,4.3,4.3,4.3,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.2,4.3,4.3,4.4,4.4,4.5,4.5,4.5,4.5,4.5,4.5,4.4],
+        rate: [45,41,39,38,37,36,36,35,35,34,34,34,34,34,34,34,34,33,33,33,33,33,33,33,33,33,33,33,33,34,34,35,35,35,36,36,36,36,36,35]
+      }
+    ]
+  },
+  'M8+': {
+    venue: 'Shanghai, China',
+    date: '28 Sep 2025',
+    event: '2025 World Rowing Championships',
+    class: 'M8+',
+    round: 'FA',
+    raceNum: 140,
+    boats: [
+      {
+        country: 'GBR', rank: 1, lane: 3,
+        speed: [5.8,5.7,5.6,5.5,5.4,5.4,5.3,5.3,5.3,5.2,5.2,5.2,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.2,5.2,5.2,5.3,5.3,5.4,5.4,5.5,5.5,5.6,5.6],
+        rate: [44,42,41,40,39,39,38,38,38,37,37,37,37,37,37,37,37,37,37,36,36,36,36,36,36,36,36,36,36,37,37,37,38,38,38,39,39,40,40,41]
+      },
+      {
+        country: 'NED', rank: 2, lane: 4,
+        speed: [5.7,5.6,5.5,5.4,5.3,5.3,5.2,5.2,5.2,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.2,5.2,5.2,5.3,5.3,5.4,5.4,5.4,5.4,5.4,5.3],
+        rate: [44,42,41,40,39,39,38,38,38,38,38,38,38,38,37,37,37,37,37,37,37,37,37,37,37,37,37,37,37,38,38,38,38,39,39,39,39,39,39,39]
+      },
+      {
+        country: 'AUS', rank: 3, lane: 2,
+        speed: [5.6,5.5,5.4,5.3,5.3,5.2,5.2,5.1,5.1,5.1,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.0,5.1,5.1,5.1,5.2,5.2,5.3,5.3,5.3,5.3,5.3,5.2],
+        rate: [43,41,40,39,39,38,38,38,37,37,37,37,37,37,37,37,36,36,36,36,36,36,36,36,36,36,36,36,36,37,37,37,38,38,38,38,38,38,38,38]
+      },
+      {
+        country: 'ROU', rank: 4, lane: 5,
+        speed: [5.5,5.4,5.3,5.2,5.2,5.1,5.1,5.0,5.0,5.0,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,5.0,5.0,5.0,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.0],
+        rate: [43,41,40,39,38,38,37,37,37,37,37,37,37,37,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,37,37,37,37,37,37,37,37,37,37]
+      },
+      {
+        country: 'GER', rank: 5, lane: 1,
+        speed: [5.6,5.5,5.4,5.3,5.2,5.2,5.1,5.1,5.0,5.0,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9,5.0,5.0,5.0,5.1,5.1,5.1,5.1,5.1,5.1,5.1,5.0],
+        rate: [44,42,41,40,39,39,38,38,37,37,37,37,37,37,37,37,36,36,36,36,36,36,36,36,36,36,36,36,36,37,37,37,37,37,37,37,37,37,37,37]
+      }
+    ]
+  },
+  'M2x': {
+    venue: 'Shanghai, China',
+    date: '28 Sep 2025',
+    event: '2025 World Rowing Championships',
+    class: 'M2x',
+    round: 'FA',
+    raceNum: 138,
+    boats: [
+      {
+        country: 'NED', rank: 1, lane: 4,
+        speed: [5.5,5.4,5.3,5.2,5.1,5.0,5.0,4.9,4.9,4.8,4.8,4.8,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.8,4.8,4.9,4.9,5.0,5.0,5.1,5.1,5.2,5.2,5.2],
+        rate: [44,42,40,39,38,38,37,37,36,36,36,36,36,36,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,36,36,37,37,38,38,39,39,40,40,40]
+      },
+      {
+        country: 'AUS', rank: 2, lane: 3,
+        speed: [5.4,5.3,5.2,5.1,5.0,5.0,4.9,4.9,4.8,4.8,4.8,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.8,4.8,4.9,4.9,4.9,5.0,5.0,5.1,5.1,5.1,5.1],
+        rate: [44,42,41,40,39,38,38,37,37,37,37,37,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,37,37,37,38,38,38,38,39,39,39,39]
+      },
+      {
+        country: 'ROU', rank: 3, lane: 5,
+        speed: [5.3,5.2,5.1,5.0,5.0,4.9,4.9,4.8,4.8,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.7,4.8,4.8,4.8,4.9,4.9,4.9,4.9,4.9,4.9,4.9,4.9],
+        rate: [43,41,40,39,38,38,37,37,37,36,36,36,36,36,36,36,36,36,35,35,35,35,35,35,35,35,35,35,35,36,36,36,37,37,37,37,37,37,37,37]
+      }
+    ]
+  }
+};
+
+// ============================================================
+// PDF PARSER
+// ============================================================
+async function parseRacePDF(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const typedarray = new Uint8Array(arrayBuffer);
+  
+  // Try to extract text content from PDF
+  // PDF text extraction using simple approach
+  let text = '';
+  let inText = false;
+  let currentText = '';
+  
+  // Find text between parentheses in PDF stream
+  for (let i = 0; i < typedarray.length; i++) {
+    if (typedarray[i] === 0x28) { // '('
+      inText = true;
+      currentText = '';
+    } else if (typedarray[i] === 0x29) { // ')'
+      inText = false;
+      if (currentText.trim()) {
+        text += currentText + '\n';
+      }
+    } else if (inText) {
+      currentText += String.fromCharCode(typedarray[i]);
+    }
+  }
+  
+  // If direct extraction fails, try using pdftotext
+  if (text.length < 50) {
+    text = await extractPDFText(file);
+  }
+  
+  return parseRaceText(text, file.name);
+}
+
+async function extractPDFText(file) {
+  // Use a simple approach: fetch the file and convert
+  // For now, we'll use a text-based fallback
+  return '';
+}
+
+function parseRaceText(text, filename) {
+  const lines = text.split('\n').filter(l => l.trim());
+  
+  // Extract metadata
+  const venue = lines[0] || 'Unknown';
+  const dateLine = lines.find(l => /\d{1,2}\s+\w+\s+\d{4}/.test(l)) || '';
+  const eventLine = lines.find(l => l.includes('Race Data') || l.includes('(Event)')) || '';
+  const className = lines.find(l => /^[MWLM][1-8][x+-]?$/.test(l.trim())) || 'Unknown';
+  const round = lines.find(l => /^(FA|FB|FC|FD|SF|HEAT|QUARTER|PRELIM)/.test(l.trim())) || 'FA';
+  const raceNum = lines.find(l => /^Race\s+\d+/.test(l.trim())) || '';
+  
+  // Find country codes
+  const countryCodes = [];
+  const codeStart = lines.findIndex(l => l.trim() === 'Country');
+  if (codeStart >= 0) {
+    for (let i = codeStart + 1; i < Math.min(codeStart + 10, lines.length); i++) {
+      const code = lines[i].trim();
+      if (/^[A-Z]{3}\d?$/.test(code)) {
+        countryCodes.push(code);
+      } else break;
+    }
+  }
+  
+  // Find ranks
+  const rankIdx = lines.findIndex(l => l.trim() === 'Rank');
+  const ranks = [];
+  if (rankIdx >= 0) {
+    for (let i = rankIdx + 1; i < Math.min(rankIdx + 10, lines.length); i++) {
+      const r = parseInt(lines[i].trim());
+      if (!isNaN(r)) ranks.push(r);
+      else break;
+    }
+  }
+  
+  // Find data section
+  const distIdx = lines.findIndex(l => l.includes('Dist.') || l.includes('[m]'));
+  if (distIdx < 0) return null;
+  
+  // Count columns (number of boats * 2 + 1 for distance)
+  const headerLine = lines[distIdx];
+  const speedCount = (headerLine.match(/Speed/g) || []).length;
+  const rateCount = (headerLine.match(/Stroke/g) || []).length;
+  const numBoats = Math.min(speedCount, rateCount, countryCodes.length);
+  
+  if (numBoats === 0) return null;
+  
+  // Find data rows (after the header)
+  let dataStart = distIdx + 1;
+  // Skip the distance values row
+  const distances = [];
+  const dataRows = [];
+  
+  for (let i = dataStart; i < lines.length; i++) {
+    const vals = lines[i].trim().split(/\s+/).map(v => parseFloat(v));
+    if (vals.length >= 1 && !isNaN(vals[0]) && vals[0] >= 50 && vals[0] <= 2000) {
+      distances.push(vals[0]);
+      dataRows.push(vals.slice(1));
+    }
+  }
+  
+  if (distances.length < 10) return null; // Not enough data
+  
+  // Extract speed and rate for each boat
+  const boats = [];
+  for (let b = 0; b < numBoats; b++) {
+    const speed = [];
+    const rate = [];
+    for (let r = 0; r < dataRows.length; r++) {
+      const speedIdx = b * 2;
+      const rateIdx = b * 2 + 1;
+      if (speedIdx < dataRows[r].length) {
+        speed.push(dataRows[r][speedIdx]);
+        if (rateIdx < dataRows[r].length) {
+          rate.push(dataRows[r][rateIdx]);
+        }
+      }
+    }
+    if (speed.length > 10) {
+      boats.push({
+        country: countryCodes[b] || `LANE${b+1}`,
+        rank: ranks[b] || b + 1,
+        lane: b + 1,
+        speed: speed,
+        rate: rate
+      });
+    }
+  }
+  
+  return {
+    venue: venue,
+    date: dateLine,
+    event: 'Parsed Race Data',
+    class: className.trim(),
+    round: round.trim(),
+    raceNum: raceNum.replace('Race ', '').trim(),
+    boats: boats
+  };
+}
+
+// ============================================================
+// CHART HELPERS
+// ============================================================
+const DISTANCES = [50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000,1050,1100,1150,1200,1250,1300,1350,1400,1450,1500,1550,1600,1650,1700,1750,1800,1850,1900,1950,2000];
+
+let speedChart = null;
+let rateChart = null;
+let profileChart = null;
+let splitChart = null;
+let diffChart = null;
+let currentRaceData = null;
+
+function getCountryColor(country) {
+  return COUNTRY_COLORS[country] || BOAT_COLORS[0];
+}
+
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = (seconds % 60).toFixed(1);
+  return `${mins}:${secs.padStart(4, '0')}`;
+}
+
+function paceDescription(avgSpeed) {
+  if (avgSpeed >= 5.5) return 'Very Fast';
+  if (avgSpeed >= 5.0) return 'Fast';
+  if (avgSpeed >= 4.5) return 'Moderate';
+  if (avgSpeed >= 4.0) return 'Steady';
+  return 'Slow';
+}
+
+function medalEmoji(rank) {
+  if (rank === 1) return '🥇';
+  if (rank === 2) return '🥈';
+  if (rank === 3) return '🥉';
+  return `#${rank}`;
+}
+
+// ============================================================
+// MAIN RENDER
+// ============================================================
+function renderRace(raceData) {
+  currentRaceData = raceData;
+  if (!raceData || !raceData.boats || raceData.boats.length === 0) {
+    showError('No valid race data found. The PDF may not contain split data.');
+    return;
+  }
+  
+  hideError();
+  
+  const boats = raceData.boats.sort((a, b) => a.rank - b.rank);
+  
+  // Show race info
+  document.getElementById('raceInfo').classList.add('visible');
+  document.getElementById('raceTitle').textContent = `${raceData.class} ${raceData.round} — Race ${raceData.raceNum}`;
+  document.getElementById('raceEvent').textContent = raceData.event;
+  document.getElementById('raceClass').textContent = raceData.class;
+  document.getElementById('raceRound').textContent = raceData.round;
+  document.getElementById('raceNumber').textContent = raceData.raceNum;
+  document.getElementById('raceDate').textContent = raceData.date || '—';
+  document.getElementById('raceVenue').textContent = raceData.venue || '—';
+  
+  // Build result table
+  const tbody = document.getElementById('resultBody');
+  tbody.innerHTML = '';
+  
+  // Calculate split times from speed data
+  boats.forEach((boat, idx) => {
+    const speeds = boat.speed;
+    // Calculate 500m split times from average speed per segment
+    const seg500 = speeds.slice(0, 10); // first 500m (50m*10)
+    const seg1000 = speeds.slice(10, 20);
+    const seg1500 = speeds.slice(20, 30);
+    const seg2000 = speeds.slice(30, 40);
+    
+    const avg500 = seg500.reduce((a,b) => a+b, 0) / seg500.length;
+    const avg1000 = seg1000.reduce((a,b) => a+b, 0) / seg1000.length;
+    const avg1500 = seg1500.reduce((a,b) => a+b, 0) / seg1500.length;
+    const avg2000 = seg2000.reduce((a,b) => a+b, 0) / seg2000.length;
+    
+    const time500 = 500 / avg500;
+    const time1000 = 500 / avg1000;
+    const time1500 = 500 / avg1500;
+    const time2000 = 500 / avg2000;
+    
+    const totalTime = (500/avg500 + 500/avg1000 + 500/avg1500 + 500/avg2000);
+    const avgSpeed = speeds.reduce((a,b) => a+b, 0) / speeds.length;
+    const avgRate = boat.rate.reduce((a,b) => a+b, 0) / boat.rate.length;
+    
+    // Determine pacing profile
+    const first500 = avg500;
+    const last500 = avg2000;
+    const ratio = last500 / first500;
+    let pacing = 'Even';
+    if (ratio > 1.03) pacing = 'Strong Finish ⚡';
+    else if (ratio < 0.97) pacing = 'Fly-and-Die 🚀💥';
+    else if (ratio > 1.01) pacing = 'Positive Split';
+    else if (ratio < 0.99) pacing = 'Negative Split';
+    
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="medal ${boat.rank === 1 ? 'gold' : boat.rank === 2 ? 'silver' : boat.rank === 3 ? 'bronze' : ''}">${medalEmoji(boat.rank)}</span></td>
+      <td>${boat.lane}</td>
+      <td><span class="legend-color" style="background:${getCountryColor(boat.country)}"></span>${boat.country}</td>
+      <td>${formatTime(time500)}</td>
+      <td>${formatTime(time1000)}</td>
+      <td>${formatTime(time1500)}</td>
+      <td>${formatTime(totalTime)}</td>
+      <td>${avgSpeed.toFixed(2)} m/s</td>
+      <td>${avgRate.toFixed(0)} spm</td>
+      <td>${pacing}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  // Show stats
+  document.getElementById('statsGrid').style.display = 'grid';
+  const winner = boats[0];
+  document.getElementById('statStartSpeed').textContent = winner.speed[0].toFixed(1) + ' m/s';
+  document.getElementById('statFinishSpeed').textContent = winner.speed[winner.speed.length-1].toFixed(1) + ' m/s';
+  document.getElementById('statMaxRate').textContent = Math.max(...winner.rate).toFixed(0) + ' spm';
+  document.getElementById('statMinRate').textContent = Math.min(...winner.rate).toFixed(0) + ' spm';
+  const speedPeak = Math.max(...winner.speed);
+  const speedMin = Math.min(...winner.speed);
+  document.getElementById('statSpeedDrop').textContent = ((speedPeak - speedMin) / speedPeak * 100).toFixed(1) + '%';
+  document.getElementById('statRateRange').textContent = (Math.max(...winner.rate) - Math.min(...winner.rate)).toFixed(0);
+  
+  // DESTROY existing charts
+  if (speedChart) { speedChart.destroy(); speedChart = null; }
+  if (rateChart) { rateChart.destroy(); rateChart = null; }
+  if (profileChart) { profileChart.destroy(); profileChart = null; }
+  if (splitChart) { splitChart.destroy(); splitChart = null; }
+  if (diffChart) { diffChart.destroy(); diffChart = null; }
+  
+  // 1. Speed over distance
+  const speedCtx = document.getElementById('speedChart').getContext('2d');
+  speedChart = new Chart(speedCtx, {
+    type: 'line',
+    data: {
+      labels: DISTANCES.slice(0, boats[0].speed.length),
+      datasets: boats.map((b, i) => ({
+        label: b.country,
+        data: b.speed,
+        borderColor: getCountryColor(b.country),
+        backgroundColor: getCountryColor(b.country) + '22',
+        borderWidth: b.rank <= 3 ? 3 : 1.5,
+        borderDash: b.rank === 1 ? [] : b.rank === 2 ? [3,3] : b.rank === 3 ? [6,3] : [2,4],
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.3,
+        fill: false
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { color: '#8899b4', usePointStyle: true, padding: 12 } },
+        tooltip: {
+          backgroundColor: '#131c31', borderColor: '#1e3355', borderWidth: 1,
+          titleColor: '#e2e8f0', bodyColor: '#8899b4',
+          callbacks: {
+            title: (items) => `${items[0].label}m`,
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} m/s`
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Distance (m)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' } },
+        y: { title: { display: true, text: 'Speed (m/s)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' }, min: 3.5 }
+      }
+    }
+  });
+  
+  // 2. Stroke rate over distance
+  const rateCtx = document.getElementById('rateChart').getContext('2d');
+  rateChart = new Chart(rateCtx, {
+    type: 'line',
+    data: {
+      labels: DISTANCES.slice(0, boats[0].rate.length),
+      datasets: boats.map((b, i) => ({
+        label: b.country,
+        data: b.rate,
+        borderColor: getCountryColor(b.country),
+        backgroundColor: getCountryColor(b.country) + '22',
+        borderWidth: b.rank <= 3 ? 3 : 1.5,
+        borderDash: b.rank === 1 ? [] : b.rank === 2 ? [3,3] : b.rank === 3 ? [6,3] : [2,4],
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.3,
+        fill: false
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { color: '#8899b4', usePointStyle: true, padding: 12 } },
+        tooltip: {
+          backgroundColor: '#131c31', borderColor: '#1e3355', borderWidth: 1,
+          titleColor: '#e2e8f0', bodyColor: '#8899b4',
+          callbacks: {
+            title: (items) => `${items[0].label}m`,
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(0)} spm`
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Distance (m)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' } },
+        y: { title: { display: true, text: 'Stroke Rate (spm)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' }, min: 30, max: 50 }
+      }
+    }
+  });
+  
+  // 3. Speed vs Stroke Rate scatter
+  const profileCtx = document.getElementById('profileChart').getContext('2d');
+  profileChart = new Chart(profileCtx, {
+    type: 'scatter',
+    data: {
+      datasets: boats.map((b, i) => ({
+        label: b.country,
+        data: b.speed.map((s, j) => ({ x: b.rate[j], y: s })),
+        backgroundColor: getCountryColor(b.country),
+        borderColor: getCountryColor(b.country),
+        pointRadius: b.rank <= 3 ? 4 : 2.5,
+        pointHoverRadius: 6,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { color: '#8899b4', usePointStyle: true, padding: 12 } },
+        tooltip: {
+          backgroundColor: '#131c31', borderColor: '#1e3355', borderWidth: 1,
+          titleColor: '#e2e8f0', bodyColor: '#8899b4',
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x.toFixed(0)} spm, ${ctx.parsed.y.toFixed(2)} m/s`
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Stroke Rate (spm)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' }, min: 30, max: 50 },
+        y: { title: { display: true, text: 'Speed (m/s)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' }, min: 3.5 }
+      }
+    }
+  });
+  
+  // 4. 500m split times
+  const splitCtx = document.getElementById('splitChart').getContext('2d');
+  const splitLabels = ['0-500m', '500-1000m', '1000-1500m', '1500-2000m'];
+  const splitDatasets = boats.map((b, i) => {
+    const speeds = b.speed;
+    const segs = [
+      speeds.slice(0, 10),
+      speeds.slice(10, 20),
+      speeds.slice(20, 30),
+      speeds.slice(30, 40)
+    ];
+    const times = segs.map(seg => {
+      const avg = seg.reduce((a, s) => a + s, 0) / seg.length;
+      return avg > 0 ? 500 / avg : 0;
+    });
+    return {
+      label: b.country,
+      data: times,
+      backgroundColor: getCountryColor(b.country),
+      borderColor: getCountryColor(b.country),
+      borderWidth: 1,
+      borderRadius: 3
+    };
+  });
+  
+  splitChart = new Chart(splitCtx, {
+    type: 'bar',
+    data: {
+      labels: splitLabels,
+      datasets: splitDatasets
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { color: '#8899b4', usePointStyle: true, padding: 12 } },
+        tooltip: {
+          backgroundColor: '#131c31', borderColor: '#1e3355', borderWidth: 1,
+          titleColor: '#e2e8f0', bodyColor: '#8899b4',
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}s`
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: '#1e3355' }, ticks: { color: '#8899b4' } },
+        y: { title: { display: true, text: 'Split Time (s)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' }, reverse: true }
+      }
+    }
+  });
+  
+  // 5. Speed differential from winner
+  const diffCtx = document.getElementById('diffChart').getContext('2d');
+  const winnerSpeeds = boats[0].speed;
+  diffChart = new Chart(diffCtx, {
+    type: 'line',
+    data: {
+      labels: DISTANCES.slice(0, winnerSpeeds.length),
+      datasets: boats.slice(1).map((b, i) => ({
+        label: `${b.country} vs ${boats[0].country}`,
+        data: b.speed.map((s, j) => j < winnerSpeeds.length ? s - winnerSpeeds[j] : 0),
+        borderColor: getCountryColor(b.country),
+        borderWidth: 1.5,
+        borderDash: [4, 4],
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.3,
+        fill: false
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { color: '#8899b4', usePointStyle: true, padding: 12 } },
+        tooltip: {
+          backgroundColor: '#131c31', borderColor: '#1e3355', borderWidth: 1,
+          titleColor: '#e2e8f0', bodyColor: '#8899b4',
+          callbacks: {
+            title: (items) => `${items[0].label}m`,
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y > 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)} m/s`
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Distance (m)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' } },
+        y: { title: { display: true, text: 'Speed Diff (m/s)', color: '#8899b4' }, grid: { color: '#1e3355' }, ticks: { color: '#8899b4' } }
+      }
+    }
+  });
+  
+  // Generate insights
+  generateInsights(raceData, boats);
+}
+
+// ============================================================
+// INSIGHTS
+// ============================================================
+function generateInsights(raceData, boats) {
+  const insights = document.getElementById('insights');
+  const list = document.getElementById('insightsList');
+  insights.style.display = 'block';
+  list.innerHTML = '';
+  
+  const items = [];
+  const winner = boats[0];
+  const last = boats[boats.length - 1];
+  
+  // Winner analysis
+  const winnerStart = winner.speed[0];
+  const winnerEnd = winner.speed[winner.speed.length - 1];
+  const winnerRateStart = winner.rate[0];
+  const winnerRateEnd = winner.rate[winner.rate.length - 1];
+  
+  items.push(`🏆 <strong>${winner.country}</strong> won with avg ${(winner.speed.reduce((a,b) => a+b, 0) / winner.speed.length).toFixed(2)} m/s, starting at ${winnerStart.toFixed(1)} m/s (${winnerRateStart.toFixed(0)} spm) and finishing at ${winnerEnd.toFixed(1)} m/s (${winnerRateEnd.toFixed(0)} spm)`);
+  
+  // Pacing
+  const first500 = winner.speed.slice(0, 10).reduce((a,b) => a+b, 0) / 10;
+  const last500 = winner.speed.slice(30, 40).reduce((a,b) => a+b, 0) / 10;
+  const ratio = last500 / first500;
+  if (ratio > 1.03) items.push(`⚡ <strong>Strong finish:</strong> ${winner.country} sped up from ${first500.toFixed(2)} to ${last500.toFixed(2)} m/s in the final 500m (${((ratio-1)*100).toFixed(1)}% faster)`);
+  else if (ratio < 0.97) items.push(`🚀 <strong>Fast start fade:</strong> ${winner.country} started at ${first500.toFixed(2)} m/s but dropped to ${last500.toFixed(2)} m/s by the end (${((1-ratio)*100).toFixed(1)}% slowdown)`);
+  else items.push(`📊 <strong>Even pacing:</strong> ${winner.country} maintained consistent speed throughout (${first500.toFixed(2)} → ${last500.toFixed(2)} m/s)`);
+  
+  // Rate analysis
+  const maxRate = Math.max(...winner.rate);
+  const minRate = Math.min(...winner.rate);
+  const rateDrop = maxRate - minRate;
+  if (rateDrop > 8) items.push(`📈 <strong>Big rate change:</strong> ${winner.country} dropped ${rateDrop.toFixed(0)} spm from start (${maxRate.toFixed(0)}) to cruising (${minRate.toFixed(0)})`);
+  else items.push(`📈 <strong>Steady rate:</strong> ${winner.country} varied only ${rateDrop.toFixed(0)} spm (${minRate.toFixed(0)}–${maxRate.toFixed(0)})`);
+  
+  // Speed drop mid-race
+  const maxSpeed = Math.max(...winner.speed);
+  const minSpeed = Math.min(...winner.speed);
+  const maxIdx = winner.speed.indexOf(maxSpeed);
+  const minIdx = winner.speed.indexOf(minSpeed);
+  if (maxIdx < minIdx) {
+    items.push(`📉 <strong>Speed dip:</strong> ${winner.country} hit peak speed of ${maxSpeed.toFixed(1)} m/s at ${(maxIdx+1)*50}m, then dropped to ${minSpeed.toFixed(1)} m/s at ${(minIdx+1)*50}m`);
+  }
+  
+  // Sprint finish
+  const last5 = winner.speed.slice(-5);
+  const last5Avg = last5.reduce((a,b) => a+b, 0) / 5;
+  const mid5 = winner.speed.slice(15, 20);
+  const mid5Avg = mid5.reduce((a,b) => a+b, 0) / 5;
+  if (last5Avg > mid5Avg * 1.03) {
+    items.push(`🏃 <strong>Sprint finish:</strong> ${winner.country} accelerated from ${mid5Avg.toFixed(2)} to ${last5Avg.toFixed(2)} m/s in the final 250m`);
+  }
+  
+  // Gap to 2nd
+  if (boats.length > 1) {
+    const second = boats[1];
+    const gap = second.speed.reduce((a,b) => a+b, 0) / second.speed.length - winner.speed.reduce((a,b) => a+b, 0) / winner.speed.length;
+    const gapPct = Math.abs(gap) / (winner.speed.reduce((a,b) => a+b, 0) / winner.speed.length) * 100;
+    if (gap < 0) {
+      items.push(`🥈 <strong>Silver gap:</strong> ${second.country} was ${Math.abs(gap).toFixed(2)} m/s (${gapPct.toFixed(1)}%) slower than ${winner.country} on average`);
+    }
+  }
+  
+  // Rate difference between medalists
+  if (boats.length >= 3) {
+    const third = boats[2];
+    const rateDiff = Math.abs(winner.rate.reduce((a,b) => a+b, 0) / winner.rate.length - third.rate.reduce((a,b) => a+b, 0) / third.rate.length);
+    if (rateDiff > 2) {
+      items.push(`🔄 <strong>Different strategies:</strong> ${winner.country} averaged ${(winner.rate.reduce((a,b) => a+b, 0) / winner.rate.length).toFixed(0)} spm while ${third.country} averaged ${(third.rate.reduce((a,b) => a+b, 0) / third.rate.length).toFixed(0)} spm`);
+    }
+  }
+  
+  // Speed vs rate efficiency
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.innerHTML = item;
+    list.appendChild(li);
+  });
+}
+
+// ============================================================
+// ERROR HANDLING
+// ============================================================
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function hideError() {
+  document.getElementById('errorMsg').classList.remove('visible');
+}
+
+// ============================================================
+// SAMPLE DATA LOADER
+// ============================================================
+function loadExample(className) {
+  const data = SAMPLE_RACES[className];
+  if (!data) {
+    showError(`No example data for ${className}`);
+    return;
+  }
+  hideError();
+  renderRace(data);
+}
+
+// ============================================================
+// PDF UPLOAD HANDLER
+// ============================================================
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+
+dropZone.addEventListener('dragleave', () => {
+  dropZone.classList.remove('dragover');
+});
+
+dropZone.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') {
+    await processPDF(file);
+  } else {
+    showError('Please drop a PDF file');
+  }
+});
+
+fileInput.addEventListener('change', async (e) => {
+  if (e.target.files[0]) {
+    await processPDF(e.target.files[0]);
+  }
+});
+
+async function processPDF(file) {
+  const loading = document.getElementById('loading');
+  loading.classList.add('active');
+  hideError();
+  
+  try {
+    const raceData = await parseRacePDF(file);
+    loading.classList.remove('active');
+    if (raceData && raceData.boats.length > 0) {
+      renderRace(raceData);
+    } else {
+      showError('Could not parse this PDF. The file may not contain standard World Rowing race data. Try loading an example instead.');
+    }
+  } catch (err) {
+    loading.classList.remove('active');
+    showError('Error processing PDF: ' + err.message);
+  }
+}
+
+// ============================================================
+// EVENT HANDLERS
+// ============================================================
+document.getElementById('exampleBtn').addEventListener('click', () => {
+  loadExample('W1x');
+});
+
+document.querySelectorAll('.example-card').forEach(card => {
+  card.addEventListener('click', () => {
+    loadExample(card.dataset.example);
+  });
+});
+
+document.getElementById('loadBtn').addEventListener('click', () => {
+  // Try to load from World Rowing (not implemented yet for live data)
+  showError('Live PDF loading from World Rowing is not yet implemented. Use the example data or upload a race data PDF.');
+});
+
+// Load example on page load
+window.addEventListener('DOMContentLoaded', () => {
+  loadExample('W1x');
+});
+</script>
+</body>
+</html>
