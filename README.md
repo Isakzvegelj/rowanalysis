@@ -16,7 +16,7 @@ Open `index.html` in a browser. No server needed.
 | **Speed Over Distance** | Line chart showing each boat's speed (m/s) at every 50m |
 | **Stroke Rate Over Distance** | Line chart showing stroke rate (spm) through the race |
 | **Pacing Profile** | Speed vs stroke rate scatter plot — see how each boat combines rate and power |
-| **500m Split Times** | Bar chart comparing each 500m segment |
+| **500m Split Times** | Bar chart comparing estimated times for each 500m segment |
 | **Speed Differential** | How each boat compares to the winner at every 50m |
 | **Race Insights** | Auto-generated analysis: pacing, rate changes, sprint finish, gaps |
 
@@ -108,3 +108,9 @@ rowanalysis/
 
 Data source: World Rowing (worldrowing.com).  
 This tool is for analysis and visualization purposes.
+
+## Timing estimates and validation
+
+Split times sum `50 / speed` for each of ten 50m speed samples. They are estimates derived from sampled speed, not official timing results. A split with fewer than ten samples or a nonpositive/nonfinite speed is unavailable; the full-race time is unavailable if any split is missing.
+
+Run the dependency-free calculation checks with `node --test tests/split-times.test.cjs`.
