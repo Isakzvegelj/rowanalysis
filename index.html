@@ -285,6 +285,8 @@ button.secondary:hover { background: var(--border); }
     </table>
   </div>
 
+  <p style="color:var(--text-dim);font-size:0.8rem;">Split and total times are estimates from 50m speed samples, not official results. Incomplete or invalid splits are unavailable.</p>
+
   <!-- Stats -->
   <div class="stats-grid" id="statsGrid" style="display:none;">
     <div class="stat-card">
@@ -334,7 +336,7 @@ button.secondary:hover { background: var(--border); }
       </div>
     </div>
     <div class="chart-card">
-      <h3>500m Split Times</h3>
+      <h3>Estimated 500m Split Times</h3>
       <div class="chart-container" style="height:300px;">
         <canvas id="splitChart"></canvas>
       </div>
@@ -712,7 +714,14 @@ function getCountryColor(country) {
   return COUNTRY_COLORS[country] || BOAT_COLORS[0];
 }
 
+function estimateSplitTime(speeds) {
+  // Ten equal 50m segments: add their durations, rather than averaging speeds.
+  if (speeds.length !== 10 || speeds.some(speed => !Number.isFinite(speed) || speed <= 0)) return null;
+  return speeds.reduce((seconds, speed) => seconds + 50 / speed, 0);
+}
+
 function formatTime(seconds) {
+  if (!Number.isFinite(seconds)) return '—';
   const mins = Math.floor(seconds / 60);
   const secs = (seconds % 60).toFixed(1);
   return `${mins}:${secs.padStart(4, '0')}`;
@@ -844,23 +853,23 @@ function renderRace(raceData) {
   // Calculate split times from speed data
   boats.forEach((boat, idx) => {
     const speeds = boat.speed;
-    // Calculate 500m split times from average speed per segment
+    // Estimate each 500m duration from ten equal-distance speed samples.
     const seg500 = speeds.slice(0, 10); // first 500m (50m*10)
     const seg1000 = speeds.slice(10, 20);
     const seg1500 = speeds.slice(20, 30);
     const seg2000 = speeds.slice(30, 40);
     
     const avg500 = seg500.reduce((a,b) => a+b, 0) / seg500.length;
-    const avg1000 = seg1000.reduce((a,b) => a+b, 0) / seg1000.length;
-    const avg1500 = seg1500.reduce((a,b) => a+b, 0) / seg1500.length;
     const avg2000 = seg2000.reduce((a,b) => a+b, 0) / seg2000.length;
     
-    const time500 = 500 / avg500;
-    const time1000 = 500 / avg1000;
-    const time1500 = 500 / avg1500;
-    const time2000 = 500 / avg2000;
-    
-    const totalTime = (500/avg500 + 500/avg1000 + 500/avg1500 + 500/avg2000);
+    const time500 = estimateSplitTime(seg500);
+    const time1000 = estimateSplitTime(seg1000);
+    const time1500 = estimateSplitTime(seg1500);
+    const time2000 = estimateSplitTime(seg2000);
+    const splitTimes = [time500, time1000, time1500, time2000];
+    const totalTime = splitTimes.every(time => time !== null)
+      ? splitTimes.reduce((total, time) => total + time, 0)
+      : null;
     const avgSpeed = speeds.reduce((a,b) => a+b, 0) / speeds.length;
     const avgRate = boat.rate.reduce((a,b) => a+b, 0) / boat.rate.length;
     
@@ -983,7 +992,7 @@ function renderRace(raceData) {
     const hidden = hiddenBoats.has(b.country);
     const speeds = b.speed;
     const segs = [speeds.slice(0, 10), speeds.slice(10, 20), speeds.slice(20, 30), speeds.slice(30, 40)];
-    const times = segs.map(seg => { const avg = seg.reduce((a, s) => a + s, 0) / seg.length; return avg > 0 ? 500 / avg : 0; });
+    const times = segs.map(estimateSplitTime);
     return { label: b.country, data: times, backgroundColor: getCountryColor(b.country) + (hidden ? '22' : 'cc'), borderColor: getCountryColor(b.country), borderWidth: 1, borderRadius: 3, hidden: hidden };
   });
   splitChart = new Chart(splitCtx, {
